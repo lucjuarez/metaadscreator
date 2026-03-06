@@ -13,11 +13,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Versión del "Santo Grial" según tu documento
+// Versión del "Santo Grial" (v25.0)
 const META_VERSION = 'v25.0';
 
 // ============================================================================
-// ENDPOINTS DE IA (Se mantienen igual para no romper tu lógica de generación)
+// ENDPOINTS DE IA (Siguen funcionando igual)
 // ============================================================================
 
 app.post('/api/generate-campaign', async (req, res) => {
@@ -79,23 +79,23 @@ app.post('/api/publish-campaign', async (req, res) => {
 });
 
 // ============================================================================
-// ENDPOINT 4: CREAR AD SET (MÁXIMA COMPATIBILIDAD v25.0)
+// ENDPOINT 4: CREAR AD SET (BLINDADO v25.0)
 // ============================================================================
 app.post('/api/create-adset', async (req, res) => {
   try {
-    const { campaignId, adSetName, budget, audience, userAccessToken, userAccountId } = req.body;
+    const { campaignId, adSetName, budget, audience, userAccessToken, userAccountId, objective } = req.body;
     const ACCESS_TOKEN = userAccessToken || process.env.META_ACCESS_TOKEN;
     const AD_ACCOUNT_ID = userAccountId || process.env.META_AD_ACCOUNT_ID;
 
-    // Conversión a centavos: 3000 ARS -> 300000
     const dailyBudget = Math.max(parseInt(budget), 1000) * 100;
 
-    const adSetData = {
+    // LÓGICA DE COMPATIBILIDAD v25.0 (Basada en el Santo Grial)
+    let adSetBody = {
       name: adSetName,
       campaign_id: campaignId,
       daily_budget: dailyBudget,
       billing_event: "IMPRESSIONS",
-      optimization_goal: "REACH", // REACH es el más "seguro" para evitar errores de objetivo
+      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
       status: "PAUSED",
       targeting: {
         geo_locations: { countries: ['AR'] },
@@ -105,10 +105,18 @@ app.post('/api/create-adset', async (req, res) => {
       access_token: ACCESS_TOKEN
     };
 
+    // Si el objetivo es Mensajes, configuramos el destino obligatorio
+    if (objective === "OUTCOME_MESSAGES") {
+        adSetBody.optimization_goal = "REPLIES";
+        adSetBody.destination_type = "WHATSAPP"; // Por defecto a WP para emprendedores
+    } else {
+        adSetBody.optimization_goal = "REACH";
+    }
+
     const metaResponse = await fetch(`https://graph.facebook.com/${META_VERSION}/${AD_ACCOUNT_ID}/adsets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(adSetData)
+      body: JSON.stringify(adSetBody)
     });
 
     const metaData = await metaResponse.json();
@@ -126,4 +134,4 @@ app.post('/api/create-adset', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Ads Creator v25.0 Full Live`));
+app.listen(PORT, () => console.log(`🚀 Ads Creator v25.0 Blindado`));
