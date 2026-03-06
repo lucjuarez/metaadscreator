@@ -1,137 +1,317 @@
-import express from 'express';
-import OpenAI from 'openai';
-import dotenv from 'dotenv';
-import cors from 'cors';
+import express from "express"
+import cors from "cors"
+import dotenv from "dotenv"
+import axios from "axios"
+import OpenAI from "openai"
+import FormData from "form-data"
 
-dotenv.config();
+dotenv.config()
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const app = express()
+app.use(cors())
+app.use(express.json())
+
+const PORT = process.env.PORT || 3000
+
+const META_VERSION = "v25.0"
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+ apiKey: process.env.OPENAI_API_KEY
+})
 
-// Versión del "Santo Grial" (v25.0)
-const META_VERSION = 'v25.0';
+/* ---------------------------
+AI STRATEGY
+--------------------------- */
 
-// ============================================================================
-// ENDPOINTS DE IA (Siguen funcionando igual)
-// ============================================================================
+async function generateStrategy(business) {
 
-app.post('/api/generate-campaign', async (req, res) => {
-  try {
-    const { businessContext } = req.body;
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      messages: [
-        { role: "system", content: "Eres un Media Buyer experto. Responde solo en JSON." },
-        { role: "user", content: `Contexto: ${businessContext}` }
-      ]
-    });
-    res.json(JSON.parse(response.choices[0].message.content));
-  } catch (error) { res.status(500).json({ error: "Error en IA" }); }
-});
+ const prompt = `
+Eres un experto en Meta Ads.
 
-app.post('/api/generate-creative', async (req, res) => {
-  try {
-    const { imagePrompt, imageText } = req.body;
-    const imageResponse = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: imagePrompt + ". Text to include: " + imageText,
-      n: 1, size: "1024x1024",
-    });
-    res.json({ final_creative_url: imageResponse.data[0].url });
-  } catch (error) { res.status(500).json({ error: "Error en DALL-E" }); }
-});
+Analiza este negocio y genera una estrategia publicitaria.
 
-// ============================================================================
-// ENDPOINT 3: CREAR CAMPAÑA (v25.0)
-// ============================================================================
-app.post('/api/publish-campaign', async (req, res) => {
-  try {
-    const { campaignName, objective, userAccessToken, userAccountId } = req.body;
-    const ACCESS_TOKEN = userAccessToken || process.env.META_ACCESS_TOKEN;
-    const AD_ACCOUNT_ID = userAccountId || process.env.META_AD_ACCOUNT_ID;
+Negocio:
+${business}
 
-    const metaResponse = await fetch(`https://graph.facebook.com/${META_VERSION}/${AD_ACCOUNT_ID}/campaigns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: campaignName,
-        objective: objective || "OUTCOME_LEADS",
-        status: "PAUSED",
-        special_ad_categories: [], 
-        access_token: ACCESS_TOKEN
-      })
-    });
+Devuelve JSON:
 
-    const metaData = await metaResponse.json();
-    if (metaData.error) {
-        console.error("❌ Error Campaña:", metaData.error);
-        return res.status(400).json({ error: metaData.error.message });
-    }
-    res.json({ success: true, campaign_id: metaData.id });
-  } catch (error) { res.status(500).json({ error: "Fallo total en Campaña" }); }
-});
-
-// ============================================================================
-// ENDPOINT 4: CREAR AD SET (BLINDADO v25.0)
-// ============================================================================
-app.post('/api/create-adset', async (req, res) => {
-  try {
-    const { campaignId, adSetName, budget, audience, userAccessToken, userAccountId, objective } = req.body;
-    const ACCESS_TOKEN = userAccessToken || process.env.META_ACCESS_TOKEN;
-    const AD_ACCOUNT_ID = userAccountId || process.env.META_AD_ACCOUNT_ID;
-
-    const dailyBudget = Math.max(parseInt(budget), 1000) * 100;
-
-    // LÓGICA DE COMPATIBILIDAD v25.0 (Basada en el Santo Grial)
-    let adSetBody = {
-      name: adSetName,
-      campaign_id: campaignId,
-      daily_budget: dailyBudget,
-      billing_event: "IMPRESSIONS",
-      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-      status: "PAUSED",
-      targeting: {
-        geo_locations: { countries: ['AR'] },
-        age_min: parseInt(audience.age_min) || 18,
-        age_max: parseInt(audience.age_max) || 65
-      },
-      access_token: ACCESS_TOKEN
-    };
-
-    // Si el objetivo es Mensajes, configuramos el destino obligatorio
-    if (objective === "OUTCOME_MESSAGES") {
-        adSetBody.optimization_goal = "REPLIES";
-        adSetBody.destination_type = "WHATSAPP"; // Por defecto a WP para emprendedores
-    } else {
-        adSetBody.optimization_goal = "REACH";
-    }
-
-    const metaResponse = await fetch(`https://graph.facebook.com/${META_VERSION}/${AD_ACCOUNT_ID}/adsets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(adSetBody)
-    });
-
-    const metaData = await metaResponse.json();
-
-    if (metaData.error) {
-      console.error("❌ Error AdSet Meta:", JSON.stringify(metaData.error));
-      return res.status(400).json({ error: metaData.error.message });
-    }
-
-    res.json({ success: true, adset_id: metaData.id });
-  } catch (error) {
-    console.error("❌ Error AdSet Servidor:", error);
-    res.status(500).json({ error: "Error interno al crear Ad Set" });
+{
+ objective:"",
+ budget:3000,
+ interests:["","",""],
+ ads:[
+  {
+   hook:"",
+   text:"",
+   headline:"",
+   image_prompt:""
+  },
+  {
+   hook:"",
+   text:"",
+   headline:"",
+   image_prompt:""
+  },
+  {
+   hook:"",
+   text:"",
+   headline:"",
+   image_prompt:""
   }
-});
+ ]
+}
+`
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Ads Creator v25.0 Blindado`));
+ const response = await openai.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: [
+   { role: "user", content: prompt }
+  ]
+ })
+
+ return JSON.parse(response.choices[0].message.content)
+}
+
+/* ---------------------------
+GENERATE IMAGE
+--------------------------- */
+
+async function generateImage(prompt){
+
+ const img = await openai.images.generate({
+  model: "dall-e-3",
+  prompt: prompt,
+  size: "1024x1024"
+ })
+
+ return img.data[0].url
+}
+
+/* ---------------------------
+UPLOAD IMAGE META
+--------------------------- */
+
+async function uploadImage(adAccountId,imageUrl,token){
+
+ const image = await axios.get(imageUrl,{responseType:"arraybuffer"})
+
+ const form = new FormData()
+
+ form.append("file",Buffer.from(image.data),"creative.png")
+
+ const res = await axios.post(
+
+  `https://graph.facebook.com/${META_VERSION}/act_${adAccountId}/adimages`,
+  form,
+  {
+   headers:{
+    ...form.getHeaders()
+   },
+   params:{
+    access_token:token
+   }
+  }
+ )
+
+ const hash = Object.values(res.data.images)[0].hash
+
+ return hash
+}
+
+/* ---------------------------
+CREATE CAMPAIGN
+--------------------------- */
+
+async function createCampaign(adAccountId,objective,token){
+
+ const res = await axios.post(
+
+  `https://graph.facebook.com/${META_VERSION}/act_${adAccountId}/campaigns`,
+  {
+   name:"AI Campaign",
+   objective:objective,
+   status:"PAUSED"
+  },
+  {
+   params:{access_token:token}
+  }
+ )
+
+ return res.data.id
+}
+
+/* ---------------------------
+CREATE ADSET
+--------------------------- */
+
+async function createAdset(adAccountId,campaignId,budget,interests,token){
+
+ const res = await axios.post(
+
+  `https://graph.facebook.com/${META_VERSION}/act_${adAccountId}/adsets`,
+  {
+   name:"AI Adset",
+   campaign_id:campaignId,
+   daily_budget:budget*100,
+   billing_event:"IMPRESSIONS",
+   optimization_goal:"LINK_CLICKS",
+   bid_strategy:"LOWEST_COST_WITHOUT_CAP",
+   targeting:{
+    geo_locations:{countries:["AR"]},
+    age_min:21,
+    age_max:55,
+    interests:interests.map(i=>({name:i}))
+   },
+   status:"PAUSED"
+  },
+  {
+   params:{access_token:token}
+  }
+ )
+
+ return res.data.id
+}
+
+/* ---------------------------
+CREATE CREATIVE
+--------------------------- */
+
+async function createCreative(adAccountId,pageId,hash,ad,token){
+
+ const res = await axios.post(
+
+  `https://graph.facebook.com/${META_VERSION}/act_${adAccountId}/adcreatives`,
+  {
+   name:"AI Creative",
+   object_story_spec:{
+    page_id:pageId,
+    link_data:{
+     message:ad.text,
+     name:ad.headline,
+     image_hash:hash,
+     link:"https://www.tusitio.com",
+     call_to_action:{
+      type:"SHOP_NOW"
+     }
+    }
+   }
+  },
+  {
+   params:{access_token:token}
+  }
+ )
+
+ return res.data.id
+}
+
+/* ---------------------------
+CREATE AD
+--------------------------- */
+
+async function createAd(adAccountId,adsetId,creativeId,token){
+
+ const res = await axios.post(
+
+  `https://graph.facebook.com/${META_VERSION}/act_${adAccountId}/ads`,
+  {
+   name:"AI Ad",
+   adset_id:adsetId,
+   creative:{creative_id:creativeId},
+   status:"PAUSED"
+  },
+  {
+   params:{access_token:token}
+  }
+ )
+
+ return res.data.id
+}
+
+/* ---------------------------
+MAIN ROUTE
+--------------------------- */
+
+app.post("/create-campaign",async(req,res)=>{
+
+ try{
+
+  const {business,adAccountId,pageId,token}=req.body
+
+  /* STEP 1 AI STRATEGY */
+
+  const strategy = await generateStrategy(business)
+
+  /* STEP 2 CAMPAIGN */
+
+  const campaignId = await createCampaign(
+   adAccountId,
+   strategy.objective,
+   token
+  )
+
+  /* STEP 3 ADSET */
+
+  const adsetId = await createAdset(
+   adAccountId,
+   campaignId,
+   strategy.budget,
+   strategy.interests,
+   token
+  )
+
+  const createdAds=[]
+
+  /* STEP 4 ADS LOOP */
+
+  for(const ad of strategy.ads){
+
+   const imageUrl = await generateImage(ad.image_prompt)
+
+   const hash = await uploadImage(adAccountId,imageUrl,token)
+
+   const creativeId = await createCreative(
+    adAccountId,
+    pageId,
+    hash,
+    ad,
+    token
+   )
+
+   const adId = await createAd(
+    adAccountId,
+    adsetId,
+    creativeId,
+    token
+   )
+
+   createdAds.push(adId)
+
+  }
+
+  res.json({
+   success:true,
+   campaignId,
+   adsetId,
+   ads:createdAds
+  })
+
+ }catch(error){
+
+  console.log(error.response?.data || error.message)
+
+  res.status(500).json({
+   error:"Error creating campaign"
+  })
+ }
+
+})
+
+/* ---------------------------
+SERVER
+--------------------------- */
+
+app.listen(PORT,()=>{
+
+ console.log("🚀 Ads Creator API running on port",PORT)
+
+})
