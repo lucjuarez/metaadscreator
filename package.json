@@ -1,0 +1,16 @@
+{
+"name": "ai-campaign-builder-api",
+"version": "1.0.0",
+"description": "Motor de IA para Meta Ads - Backend",
+"main": "server.js",
+"type": "module",
+"scripts": {
+"start": "node server.js"
+},
+"dependencies": {
+"cors": "^2.8.5",
+"dotenv": "^16.4.5",
+"express": "^4.19.2",
+"openai": "^4.28.0"
+}
+}
