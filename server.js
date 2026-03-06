@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import cors from 'cors';
 
+// Cargar variables de entorno
 dotenv.config();
 
 const app = express();
@@ -10,6 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Inicializar OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -107,22 +109,25 @@ app.post('/api/generate-creative', async (req, res) => {
 });
 
 // ============================================================================
-// ENDPOINT 3: PUBLICAR EN META ADS (VERSION v19.0)
+// ENDPOINT 3: PUBLICAR EN META ADS (ACTUALIZADO PARA MÚLTIPLES USUARIOS)
 // ============================================================================
 app.post('/api/publish-campaign', async (req, res) => {
   try {
-    const { campaignName, objective } = req.body;
+    // Ahora el backend espera recibir las llaves desde el frontend
+    const { campaignName, objective, userAccessToken, userAccountId } = req.body;
     
-    // Obtenemos las llaves fijas desde las variables de entorno de Render
-    const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
-    const AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID;
+    // Si el cliente envía sus propias llaves, las usamos. Si no, usamos las tuyas de prueba en Render (como respaldo).
+    const ACCESS_TOKEN = userAccessToken || process.env.META_ACCESS_TOKEN;
+    const AD_ACCOUNT_ID = userAccountId || process.env.META_AD_ACCOUNT_ID;
 
     if (!ACCESS_TOKEN || !AD_ACCOUNT_ID) {
-      return res.status(500).json({ error: "Faltan las credenciales de Meta en el servidor." });
+      console.error("❌ Faltan credenciales. Token:", !!ACCESS_TOKEN, "Cuenta:", !!AD_ACCOUNT_ID);
+      return res.status(400).json({ error: "Faltan las credenciales de Meta (Token o ID de cuenta)." });
     }
 
-    console.log(`🚀 [FASE 3] Creando campaña en Meta v19.0...`);
+    console.log(`🚀 [FASE 3] Creando campaña en Meta... Objetivo: ${objective}`);
 
+    // Llamada HTTP a la Graph API de Meta
     const metaResponse = await fetch(`https://graph.facebook.com/v19.0/${AD_ACCOUNT_ID}/campaigns`, {
       method: 'POST',
       headers: {
@@ -131,8 +136,8 @@ app.post('/api/publish-campaign', async (req, res) => {
       body: JSON.stringify({
         name: campaignName || "Campaña Generada por IA - Ads Creator",
         objective: objective || "OUTCOME_LEADS",
-        status: "PAUSED", 
-        special_ad_categories: [], 
+        status: "PAUSED", // SIEMPRE en pausa por seguridad
+        special_ad_categories: [], // Obligatorio para la API
         access_token: ACCESS_TOKEN
       })
     });
@@ -144,10 +149,12 @@ app.post('/api/publish-campaign', async (req, res) => {
       return res.status(400).json({ error: metaData.error.message });
     }
 
+    console.log("✅ [FASE 3] Campaña creada con éxito. ID:", metaData.id);
+
     res.json({
       success: true,
       campaign_id: metaData.id,
-      message: "Campaña creada en modo borrador (v19.0)"
+      message: "Campaña creada en modo borrador"
     });
 
   } catch (error) {
@@ -159,5 +166,5 @@ app.post('/api/publish-campaign', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Ads Creator Backend (Pre-Documentos Meta) corriendo en el puerto: ${PORT}`);
+  console.log(`🚀 Ads Creator Backend corriendo en el puerto: ${PORT}`);
 });
